@@ -181,3 +181,6 @@ def main():
         readData(OUTPUT)
         time.sleep(3)
     end_Experiment()
+
+if __name__ == '__main__':
+    main()
