@@ -2,12 +2,14 @@ import os
 import time
 import pickle
 import struct
+#import serial
 
 OUTPUT_DIR_NAME = "Experiment_outputs"
 OUTPUT_DIR_PATH = os.path.join(os.getenv("HOME"), OUTPUT_DIR_NAME)
 META_FILE = os.path.join(OUTPUT_DIR_PATH, "meta.txt")
 TABLE = os.path.join(OUTPUT_DIR_PATH, "table.tmp")
-BINARY = os.path.join(OUTPUT_DIR_PATH, "binary.tmp")
+#BINARY = os.path.join(OUTPUT_DIR_PATH, "binary.tmp")
+
 
 DESTINATION = 0
 PASSERELLE = 1
@@ -38,6 +40,7 @@ def initialization():
         create_meta = "touch "+ META_FILE
         os.system(create_meta)
         chmod_META = "chmod a+w " +META_FILE
+        os.system(chmod_META)
         with open(META_FILE, "wb") as meta_file:
             meta_file.write(struct.pack("i", 0))
         return 1
@@ -49,7 +52,8 @@ def new_Experiment():
     comme le BINARY et le TABLE"""
 
     xp_number = initialization()
-    OUTPUT = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number) )
+    OUTPUT = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number)+".txt" )
+    BINARY = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number)+".binary")
 
     init_TABLE = "touch " + TABLE
     init_BINARY = "touch " + BINARY
@@ -64,16 +68,13 @@ def new_Experiment():
     os.system(chmod_OUTPUT)
     os.system(chmod_TABLE)
 
-    return OUTPUT
+    return OUTPUT, BINARY
 
 
 def end_Experiment():
     """Ferme tous les fichiers utilisés"""
     rm_TABLE = "rm "+TABLE
-    rm_BINARY = "rm "+BINARY
-    os.system(rm_BINARY)
     os.system(rm_TABLE)
-    os.system("nano"+OUTPUT)
     pass
 
 
@@ -91,6 +92,18 @@ def getTable():
     # file.close()
     return file
 
+def parseTableData(table):
+    result = {}
+    result["DESTINATION"] = table[0]
+    result["PASSERELLE"] = table[1]
+    result["GENMASK"] = table[2]
+    result["INDIC"] = table[3]
+    result["METRIC"] = table[4]
+    result["REF"] = table[5]
+    result["USE"] = table[6]
+    result["IFACE"] = table[7]
+
+    return result
 
 def getTabledata(src=TABLE):
     data = {}
@@ -106,13 +119,21 @@ def getTabledata(src=TABLE):
             else:
                 lg[elmt].strip()
                 elmt += 1
-        cle = "ligne " + str(line)
-        data[cle] = lg
+        cle = "ligne " + str(line+1)
+        data[cle] = parseTableData(lg)
     return data
 
 
 def getTime():
-    return time.time()
+    if os.path.exists("/dev/ttyUSB0"):
+        ser = serial.Serial("/dev/ttyUSB0",4800, timout =2)
+        while True:
+            line = ser.readline()
+            line = line.split(',')
+            if line[0] == "§GPRMC":
+                return line[1]
+    else:
+        return time.time()
 
 
 def getLastInput(dst):
@@ -127,7 +148,7 @@ def getLastInput(dst):
             return data
 
 
-def setInput(dst=BINARY):
+def setInput(dst):
     data = getTabledata()
     dstSize = os.path.getsize(dst)
     with open(dst, "ab") as dest:
@@ -159,7 +180,7 @@ def compareData(gottenData, dicValues):
     return gottenData == last
 
 
-def readData(dest, scr=BINARY):
+def readData(dest, scr):
     dstSize = os.path.getsize(scr)
     with open(scr, "rb") as scr:
         if dstSize == 0:
@@ -171,16 +192,28 @@ def readData(dest, scr=BINARY):
             with open(dest, "w") as dest:
                 dest.write(str(data))
 
+def getGPSData():
+    if os.path.exists("/dev/ttyUSB0"):
+        ser = serial.Serial("/dev/ttyUSB0",4800, timout =2)
+        while True:
+            line = ser.readline()
+            line = line.split(',')
+            gpsdata = {}
+            if line[0]=="§GPRMC":
+                gpsdata
+    else:
+        print("NO GPS MODULE CONNECTED")
+
+
 
 def main():
-    OUTPUT = new_Experiment()
+    xp = new_Experiment()
+    OUTPUT = xp[0]
+    BINARY = xp[1]
     while (True):
         print("=============================== Nouvelle Interation ===================================")
         getTable()
-        setInput()
-        readData(OUTPUT)
+        setInput(BINARY)
+        readData(OUTPUT, BINARY)
         time.sleep(3)
     end_Experiment()
-
-if __name__ == '__main__':
-    main()
