@@ -1,183 +1,203 @@
+"""ce module lit la table de routage et ecrit les données dans des fichiers
+comme ceci.
+{1587496787.5253153:
+ {'ligne 1': {'DESTINATION': '0.0.0.0', 'PASSERELLE': '192.168.117.2', 'GENMASK': '0.0.0.0', 'INDIC': 'UG', 'METRIC': '100', 'REF': '0', 'USE': '0', 'IFACE': 'ens33'},
+  'ligne 2': {'DESTINATION': '169.254.0.0', 'PASSERELLE': '0.0.0.0', 'GENMASK': '255.255.0.0', 'INDIC': 'U', 'METRIC': '1000', 'REF': '0', 'USE': '0', 'IFACE': 'ens33'},
+  'ligne 3': {'DESTINATION': '192.168.117.0', 'PASSERELLE': '0.0.0.0', 'GENMASK': '255.255.255.0', 'INDIC': 'U', 'METRIC': '100', 'REF': '0', 'USE': '0', 'IFACE': 'ens33'}
+  }
+}
+dans sa presente version, le module produit 2 fichiers, un fichier binaire contenant la donnée sous forme d'objet (donc facilement exploitable par l'ordinateur mais
+illisible pour l'homme)
+un fichier .txt destiné à etre lu par l'homme.
+"""
+#!/usr/bin/python3
 import os
 import time
 import pickle
 import struct
+import json
+import subprocess
 
 OUTPUT_DIR_NAME = "Experiment_outputs"
 OUTPUT_DIR_PATH = os.path.join(os.getenv("HOME"), OUTPUT_DIR_NAME)
 META_FILE = os.path.join(OUTPUT_DIR_PATH, "meta.txt")
 TABLE = os.path.join(OUTPUT_DIR_PATH, "table.tmp")
-BINARY = os.path.join(OUTPUT_DIR_PATH, "binary.tmp")
-
-DESTINATION = 0
-PASSERELLE = 1
-GENMASK = 2
-INDIC = 3
-METRIC = 4
-REF = 5
-USE = 6
-IFACE = 7
-
+LAST_TABLE = os.path.join(OUTPUT_DIR_PATH, "lastTable.binary")
 
 def initialization():
-    """Fonction pour creer le dossier ou seront stockés les sorties
-    Ainsi qu'un fichier servant a retrouver le nombre d'experiences realisée
-    Leur donner les droits necessaire etc"""
-    if os.path.exists(OUTPUT_DIR_PATH):
-        with open(META_FILE, "rb") as meta_file:
-            number = struct.unpack("i", meta_file.read(4))
-            for i in number:
-                result = i+1
-                break
-        with open(META_FILE, "wb") as meta_file:
-            meta_file.write(struct.pack("i", result))
-        return result
-
+    """Fonction pour creer le dossier où seront stockées les sorties
+    ainsi qu'un fichier servant a retrouver le nombre d'experiences réalisée
+    Leur donner les droits necessaire etc. Si le dossier existe deja, on lit juste le
+    fichier meta.txt et on renvoi la valeur lu"""
+    if os.path.exists(OUTPUT_DIR_PATH) :
+        if os.path.exists(META_FILE):
+            with open(META_FILE, "rb") as meta_file:
+                number = struct.unpack("i", meta_file.read(4))
+                for i in number:
+                    result = i+1
+                    break
+            with open(META_FILE, "wb") as meta_file:
+                meta_file.write(struct.pack("i", result))
+            return result
+        else:
+            open(META_FILE,'x')
+            with open(META_FILE, "wb") as meta_file:
+                meta_file.write(struct.pack("i", 0))
+            return 1
     else:
         os.mkdir(OUTPUT_DIR_PATH)
-        create_meta = "touch "+ META_FILE
-        os.system(create_meta)
-        chmod_META = "chmod a+w " +META_FILE
         with open(META_FILE, "wb") as meta_file:
-            meta_file.write(struct.pack("i", 0))
+           meta_file.write(struct.pack("i", 0))
         return 1
 
 
 def new_Experiment():
     """Fonction pour creer les fichiers necessaires pour une nouvelle experience
-    notamment le fichier de sorties. Elle reinitialise aussi les fichiers intermediaires
-    comme le BINARY et le TABLE"""
+    notamment le fichier de sorties. Elle reinitialise aussi le fichier intermediaire
+    comme le TABLE"""
 
     xp_number = initialization()
-    OUTPUT = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number) )
-
-    init_TABLE = "touch " + TABLE
-    init_BINARY = "touch " + BINARY
-    init_OUTPUT = "touch " + OUTPUT
-    chmod_TABLE = "chmod a+w " + TABLE
-    chmod_BINARY = "chmod a+w " + BINARY
-    chmod_OUTPUT = "chmod a+w " + OUTPUT
-    os.system(init_TABLE)
-    os.system(init_BINARY)
-    os.system(init_OUTPUT)
-    os.system(chmod_BINARY)
-    os.system(chmod_OUTPUT)
-    os.system(chmod_TABLE)
-
-    return OUTPUT
-
-
-def end_Experiment():
-    """Ferme tous les fichiers utilisés"""
-    rm_TABLE = "rm "+TABLE
-    rm_BINARY = "rm "+BINARY
-    os.system(rm_BINARY)
-    os.system(rm_TABLE)
-    os.system("nano"+OUTPUT)
-    pass
-
-
-def jsonToXml():
-    """Permet de convertir le fichier de sortie JSON en XML comprehensible par NS3"""
-    pass
+    OUTPUT = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number)+".txt" )
+    BINARY = os.path.join(OUTPUT_DIR_PATH, "experiment_" + str(xp_number)+".binary")
+    NS_FILE = os.path.join(OUTPUT_DIR_PATH, "nsFile_" + str(xp_number)+".txt")
+    open(LAST_TABLE, 'w')
+    return OUTPUT, BINARY, NS_FILE
 
 
 def getTable():
-    result = ""
-    command = "route -n > " + TABLE
-    file = open(TABLE, 'r')
-    os.system(command)
-    result = file.read()
-    # file.close()
-    return file
+    result = subprocess.run(["route", "-n"],capture_output = True, text = True )
+    result = result.stdout
+    return str(result)
 
 
-def getTabledata(src=TABLE):
+def parseTableData(table):
+    result = {}
+    result["DESTINATION"] = table[0]
+    result["PASSERELLE"] = table[1]
+    result["GENMASK"] = table[2]
+    result["INDIC"] = table[3]
+    result["METRIC"] = table[4]
+    result["REF"] = table[5]
+    result["USE"] = table[6]
+    result["IFACE"] = table[7]
+    return result
+
+
+def getTabledata(src=getTable()):
     data = {}
-    with open(src, 'r') as file:
-        text = file.read()
-        text = text.split("\n")
+    text = src.split("\n")
     for line in range(len(text) - 3):
         lg = text[line + 2].split(' ')
-        elmt = 0
-        while elmt < len(lg) - 1:
-            if lg[elmt] in " ":
-                lg.pop(elmt)
-            else:
-                lg[elmt].strip()
-                elmt += 1
-        cle = "ligne " + str(line)
-        data[cle] = lg
+        cle = "ligne " + str(line+1)
+        data[cle] = parseTableData(tablerefactor(lg))
     return data
 
 
-def getTime():
-    return time.time()
+def isTableExist(newTable):
+    #dstSize = os.path.getsize(dst)
+    with open(LAST_TABLE, "rb") as file:
+        reader = pickle.Unpickler(file)
+        data = reader.load()
+        data = data.values()
+        return data==newTale
 
 
-def getLastInput(dst):
+def getPositions(gps_socket, data_stream):
+    info  = {}
+    for new_data in gps_socket:
+        if new_data:
+            data_stream.unpack(new_data)
+            try:
+                long = float(data_stream.TPV['lon'])
+                lat = float(data_stream.TPV['lat'])
+                speed = float(data_stream.TPV['speed'])
+                info = {'long':long,'lat':lat,'speed':speed}
+                return info, getSecondes(data_stream.TPV['time'][11:19])
+            except:
+                return None
+
+
+def getLastInput(dst=LAST_TABLE):
     dstSize = os.path.getsize(dst)
     with open(dst, "rb") as file:
         if dstSize == 0:
-            return -1
+            return None
         else:
             reader = pickle.Unpickler(file)
-            data = reader.load()
-            data = data.values()
-            return data
+            return reader.load()
 
 
-def setInput(dst=BINARY):
-    data = getTabledata()
-    dstSize = os.path.getsize(dst)
-    with open(dst, "ab") as dest:
-        if dstSize == 0:
-            newinput = {}
-            newinput[getTime()] = data
-            writer = pickle.Pickler(dest)
-            writer.dump(newinput)
+def getUpdate():
+    newRoutingTable = getTabledata()
+    lastInput = getLastInput()
+    with open(LAST_TABLE, "wb") as file:
+        writer = pickle.Pickler(file)
+        writer.dump(newRoutingTable)
+    if newRoutingTable == lastInput:
+        return {time.time(): [{}, "position"]}
+    return {time.time(): [newRoutingTable, "position"]}
+
+
+def setSimulationData(file, data, node_number=0):
+    with open(file, 'w') as scr:
+        strInit = "$node_({id}) set {name}_ {position}\n"
+        strMove = "$ns_ at {time} \"$node_({id}) setdest {position_X} {position_Y} {speed}\"\n"
+        keys = list(data.keys())
+        keys.sort()
+        X = data[keys[0]][1]['long']
+        Y = data[keys[0]][1]['lat']
+        FINAL_STR = strInit.format(id=node_number, name='X', position=X)
+        FINAL_STR += strInit.format(id=node_number, name='Y', position=Y)
+        for i in range(1, len(keys)):
+            X = data[keys[i]][1]['long']
+            Y = data[keys[i]][1]['lat']
+            avrageSpeed = (((X-data[keys[i-1]][1]['long'])**2 +(Y-data[keys[i-1]][1]['lat'])**2)**(0.5))/(keys[i]-keys[i-1])
+            FINAL_STR += strMove.format(time=(keys[i]-keys[0]), id=node_number, position_X = X, position_Y = Y, speed = avrageSpeed)
+        scr.write(FINAL_STR)
+        print(keys)
+
+def writeDataOnFile(binary, output, dico):
+    with open(binary, "wb") as bin:
+        writer = pickle.Pickler(bin)
+        writer.dump(dico)
+    with open(output, 'w') as txt:
+        txt.write(str(dico))
+
+def getSecondes(time):
+    timeTbale = time.split(':')
+    seconde = int(timeTbale[0])*3600
+    seconde += int(timeTbale[1])*60
+    seconde += int(timeTbale[2])
+    return seconde
+
+def tablerefactor(table):
+    elmt = 0
+    while elmt < len(table) - 1:
+        if table[elmt] in " ":
+            table.pop(elmt)
         else:
-            lastValue = getLastInput(dst)
-            if compareData(data, lastValue):
-                pass
-            else:
-                with open(dst, "rb") as dest:
-                    reader = pickle.Unpickler(dest)
-                    currentData = reader.load()
-                    currentData[getTime()] = data
-                with open(dst, "wb") as dest:
-                    writer = pickle.Pickler(dest)
-                    writer.dump(currentData)
+            table[elmt].strip()
+            elmt += 1
+    return table
 
+def main(nombreExc):
+    xp = new_Experiment()
+    OUTPUT = xp[0]
+    BINARY = xp[1]
+    NS_FILE = xp[2]
 
-def compareData(gottenData, dicValues):
+    dico = {}
     i = 0
-    for v in dicValues:
-        if i != len(dicValues) - 1:
-            i = +1
-    last = v
-    return gottenData == last
-
-
-def readData(dest, scr=BINARY):
-    dstSize = os.path.getsize(scr)
-    with open(scr, "rb") as scr:
-        if dstSize == 0:
-            return -1
-        else:
-            reader = pickle.Unpickler(scr)
-            data = reader.load()
-            print(data)
-            with open(dest, "w") as dest:
-                dest.write(str(data))
-
-
-def main():
-    OUTPUT = new_Experiment()
     while (True):
-        print("=============================== Nouvelle Interation ===================================")
-        getTable()
-        setInput()
-        readData(OUTPUT)
+        if i==nombreExc :
+            break
+        i+=1
+        print("============================= Nouvelle Interation =================================")
+        dico.update(getUpdate())
+        print(dico)
         time.sleep(3)
-    end_Experiment()
+    writeDataOnFile(BINARY, OUTPUT, dico)
+    setSimulationData(NS_FILE, dico)
+    #setSimulationData()
+
+main(10)
